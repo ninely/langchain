@@ -210,7 +210,7 @@ class ChildTool(BaseTool):
     ) -> Any:
         if type(self)._arun == BaseTool._arun:
             # If the tool does not implement async, fall back to default implementation
-            return super().ainvoke(input, config, **kwargs)
+            return await super().ainvoke(input, config, **kwargs)
 
         config = config or {}
         return await self.arun(
@@ -273,7 +273,11 @@ class ChildTool(BaseTool):
         Add run_manager: Optional[AsyncCallbackManagerForToolRun] = None
         to child implementations to enable tracing,
         """
-        raise NotImplementedError()
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            partial(self._run, **kwargs),
+            *args,
+        )
 
     def _to_args_and_kwargs(self, tool_input: Union[str, Dict]) -> Tuple[Tuple, Dict]:
         # For backwards compatibility, if run_input is a string,
@@ -457,7 +461,7 @@ class Tool(BaseTool):
                 None, partial(self.invoke, input, config, **kwargs)
             )
 
-        return super().ainvoke(input, config, **kwargs)
+        return await super().ainvoke(input, config, **kwargs)
 
     # --- Tool ---
 
@@ -522,7 +526,10 @@ class Tool(BaseTool):
                 if new_argument_supported
                 else await self.coroutine(*args, **kwargs)
             )
-        raise NotImplementedError("Tool does not support async")
+        else:
+            return await asyncio.get_running_loop().run_in_executor(
+                None, partial(self._run, run_manager=run_manager, **kwargs), *args
+            )
 
     # TODO: this is for backwards compatibility, remove in future
     def __init__(
@@ -585,7 +592,7 @@ class StructuredTool(BaseTool):
                 None, partial(self.invoke, input, config, **kwargs)
             )
 
-        return super().ainvoke(input, config, **kwargs)
+        return await super().ainvoke(input, config, **kwargs)
 
     # --- Tool ---
 
@@ -634,7 +641,12 @@ class StructuredTool(BaseTool):
                 if new_argument_supported
                 else await self.coroutine(*args, **kwargs)
             )
-        raise NotImplementedError("Tool does not support async")
+        return await asyncio.get_running_loop().run_in_executor(
+            None,
+            self._run,
+            partial(self._run, run_manager=run_manager, **kwargs),
+            *args,
+        )
 
     @classmethod
     def from_function(
