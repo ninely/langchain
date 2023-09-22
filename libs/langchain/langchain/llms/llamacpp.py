@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from functools import partial
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -336,7 +338,10 @@ class LlamaCpp(LLM):
         else:
             params = self._get_parameters(stop)
             params = {**params, **kwargs}
-            result = self.client(prompt=prompt, **params)
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(
+                None, partial(self.client, prompt=prompt, **params)
+            )
             return result["choices"][0]["text"]
 
     def _stream(
@@ -407,8 +412,16 @@ class LlamaCpp(LLM):
             An async generator representing the stream of tokens being generated.
         """
         params = {**self._get_parameters(stop), **kwargs}
-        result = self.client(prompt=prompt, stream=True, **params)
-        for part in result:
+
+        loop = asyncio.get_running_loop()
+        iterator = await loop.run_in_executor(
+            None, partial(self.client, prompt=prompt, stream=True, **params)
+        )
+        while True:
+            part = await loop.run_in_executor(None, next, iterator, None)
+            if part is None:
+                break
+
             logprobs = part["choices"][0].get("logprobs", None)
             chunk = GenerationChunk(
                 text=part["choices"][0]["text"],
